@@ -12,12 +12,14 @@ from sklearn.neighbors import KNeighborsClassifier
 from xgboost import XGBClassifier
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
 
 # Load the dataset
 @st.cache_data
 def load_data():
     data = pd.read_csv('data.csv')
     data = data.drop(columns=['Unnamed: 32'], errors='ignore')
+    g=data.drop(columns=['diagnosis'])
     columns_to_use = [
         'diagnosis', 'radius_mean', 'texture_mean', 'perimeter_mean',
         'area_mean', 'smoothness_mean', 'compactness_mean',
@@ -39,18 +41,20 @@ def train_models(data):
     X_test = scaler.transform(X_test)
 
     models = {
-        "Random Forest": RandomForestClassifier(),
-        "Support Vector Machine": SVC(),
-        "XGBoost": XGBClassifier(eval_metric='logloss'),
-        "K-Nearest Neighbors": KNeighborsClassifier()
-    }
+    "Random Forest": RandomForestClassifier(),
+    "Support Vector Machine": SVC(),
+    "XGBoost": XGBClassifier(eval_metric='logloss'),
+    "K-Nearest Neighbors": KNeighborsClassifier(),
+    "Logistic Regression": LogisticRegression(max_iter=1000)
+}
     
     param_grid = {
-        'Random Forest': {'n_estimators': [50, 100, 200], 'max_depth': [None, 10, 20]},
-        'Support Vector Machine': {'C': [0.1, 1, 10], 'kernel': ['linear', 'rbf']},
-        'XGBoost': {'n_estimators': [50, 100, 200], 'learning_rate': [0.01, 0.1, 0.2]},
-        'K-Nearest Neighbors': {'n_neighbors': [3, 5, 7, 9], 'weights': ['uniform', 'distance']}
-    }
+    'Random Forest': {'n_estimators': [50, 100, 200], 'max_depth': [None, 10, 20]},
+    'Support Vector Machine': {'C': [0.1, 1, 10], 'kernel': ['linear', 'rbf']},
+    'XGBoost': {'n_estimators': [50, 100, 200], 'learning_rate': [0.01, 0.1, 0.2]},
+    'K-Nearest Neighbors': {'n_neighbors': [3, 5, 7, 9], 'weights': ['uniform', 'distance']},
+    'Logistic Regression': {'C': [0.01, 0.1, 1, 10], 'penalty': ['l2', 'none']}
+}
 
     results = []
     for model_name, model in models.items():
@@ -117,10 +121,72 @@ if st.sidebar.button("Predict"):
 # Main Section: Analysis and Results
 st.header("📊 Results and Analysis")
 
-tabs = st.tabs(["Model Scores", "Feature Histograms", "Dataset Preview", "Confusion Matrices","best model"])
+tabs = st.tabs([
+    "Dataset Preview", 
+    "Feature Histograms", 
+    "Boxplots", 
+    "Model Scores", 
+    "Confusion Matrices", 
+    "Best Model"
+])
 
-# Tab 1: Model Scores
+# Tab 1: Dataset Preview
 with tabs[0]:
+    st.subheader("Dataset Preview")
+    st.write(data.head())
+
+# Tab 2: Feature Histograms
+with tabs[1]:
+    st.subheader("Feature Distributions")
+    features = [
+        'radius_mean', 'texture_mean', 'perimeter_mean', 'area_mean',
+        'smoothness_mean', 'compactness_mean', 'concavity_mean', 'concave points_mean'
+    ]
+    num_features = len(features)
+    num_cols = 2
+    num_rows = (num_features + num_cols - 1) // num_cols
+    fig, ax = plt.subplots(num_rows, num_cols, figsize=(12, 4 * num_rows))
+    ax = ax.flatten()
+    for i, feature in enumerate(features):
+        ax[i].hist(data[feature], bins=20, alpha=0.7, color='skyblue')
+        ax[i].set_title(feature)
+        ax[i].set_xlabel("Value")
+        ax[i].set_ylabel("Frequency")
+    for j in range(len(features), len(ax)):
+        fig.delaxes(ax[j])
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+# Tab 3: Boxplots
+with tabs[2]:
+    st.subheader("Boxplots for Feature Distribution")
+    
+    # Add radio button to choose before or after scaling
+    scaling_option = st.radio("View Boxplot", ("Before Scaling", "After Scaling"))
+    
+    # If after scaling, apply scaling to the data
+    if scaling_option == "After Scaling":
+        # Apply scaling
+        scaled_data = pd.DataFrame(scaler.transform(data.drop(columns=['diagnosis'])), columns=data.columns[1:])
+        selected_features = st.multiselect("Select Features for Boxplot", scaled_data.columns, default=scaled_data.columns)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.boxplot(data=scaled_data[selected_features], ax=ax)
+        ax.set_title("Boxplot of Selected Features (After Scaling)")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    else:
+        # Before scaling, use the original data
+        selected_features = st.multiselect("Select Features for Boxplot", data.columns[1:], default=data.columns[1:])
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.boxplot(data=data[selected_features], ax=ax)
+        ax.set_title("Boxplot of Selected Features (Before Scaling)")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+
+
+# Tab 4: Model Scores
+with tabs[3]:
     st.subheader("Model Performance Metrics")
     for result in results:
         st.markdown(f"**{result['Model']}**")
@@ -130,24 +196,8 @@ with tabs[0]:
         st.write(f"Recall: {result['Recall']:.2f}")
         st.write("---")
 
-# Tab 2: Feature Histograms
-with tabs[1]:
-    st.subheader("Feature Distributions")
-    fig, ax = plt.subplots(2, 2, figsize=(12, 8))
-    features = ['radius_mean', 'texture_mean', 'perimeter_mean', 'area_mean']
-    for i, feature in enumerate(features):
-        ax[i // 2, i % 2].hist(data[feature], bins=20, alpha=0.7, color='skyblue')
-        ax[i // 2, i % 2].set_title(feature)
-    plt.tight_layout()
-    st.pyplot(fig)
-
-# Tab 3: Dataset Preview
-with tabs[2]:
-    st.subheader("Dataset Preview")
-    st.write(data.head())
-
-# Tab 4: Confusion Matrices
-with tabs[3]:
+# Tab 5: Confusion Matrices
+with tabs[4]:
     st.subheader("Confusion Matrices")
     for result in results:
         fig, ax = plt.subplots(figsize=(6, 5))
@@ -156,22 +206,16 @@ with tabs[3]:
         ax.set_xlabel("Predicted")
         ax.set_ylabel("Actual")
         st.pyplot(fig)
-#best model details
-# Tab 5: Best Model Details
-with tabs[4]:
-    st.subheader("Best Model Details")
-    
-    # Identify the best model by F1 score
-    best_result = max(results, key=lambda x: x['F1 Score'])
 
-    # Display details of the best model
+# Tab 6: Best Model Details
+with tabs[5]:
+    st.subheader("Best Model Details")
+    best_result = max(results, key=lambda x: x['F1 Score'])
     st.markdown(f"### **{best_result['Model']}**")
     st.write(f"**Accuracy:** {best_result['Accuracy']:.2f}")
     st.write(f"**F1 Score:** {best_result['F1 Score']:.2f}")
     st.write(f"**Precision:** {best_result['Precision']:.2f}")
     st.write(f"**Recall:** {best_result['Recall']:.2f}")
-
-    # Display confusion matrix for the best model
     st.subheader("Confusion Matrix")
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.heatmap(best_result["Confusion Matrix"], annot=True, fmt='d', cmap='Blues', ax=ax)
